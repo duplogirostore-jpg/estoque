@@ -41,7 +41,12 @@ app = Flask(__name__)
 # chave estavel: sem SECRET_KEY, deriva da senha + segredo do Bling (nao muda a cada reinicio)
 app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(("rf|%s|%s" % (SENHA, CSEC)).encode()).hexdigest()
 app.config.update(SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=dt.timedelta(days=30))
-DB_URL = os.environ.get("DATABASE_URL", "")
+DB_URL = os.environ.get("DATABASE_URL", "").strip()
+AVISO_DB = ""
+if DB_URL and not DB_URL.startswith(("postgres://", "postgresql://")):
+    AVISO_DB = ("A variável DATABASE_URL no Render não é uma conexão do Neon (deve começar com postgresql://). "
+                "Corrija-a; enquanto isso o token do Bling fica só em arquivo temporário e se perde nos reinícios.")
+    DB_URL = ""
 API = "https://api.bling.com.br/Api/v3"
 OAUTH = "https://www.bling.com.br/Api/v3/oauth"
 SIT_NF_OK = {5, 6, 7}            # Autorizada, DANFE emitida, Registrada
@@ -381,6 +386,7 @@ def api_status():
     with _lock:
         job = dict(JOB)
     return jsonify(
+        aviso=AVISO_DB,
         conectado=bool(_TOK.get("refresh_token") or (kv_get("bling_token") or {}).get("refresh_token")),
         job=job,
         nf={"nfs": len(CACHE["nf"]), "naturezas": [{"id": k, "nfs": c} for k, c in nat.most_common()]},
@@ -628,6 +634,7 @@ PAGINA = r"""<!doctype html>
 <header><div><h1>Risco de falta</h1>
 <p class="sub">Saídas do Bling cruzadas com o saldo da planilha do fornecedor.</p></div><a href="/logout">Sair</a></header>
 
+<section id="aviso" class="oculto" style="border-color:#e0a800;background:#fff8e1"></section>
 <section id="conexao" class="oculto"><b>O Bling ainda não está conectado.</b> <a href="/bling/conectar"><button>Conectar ao Bling</button></a></section>
 
 <section>
@@ -694,6 +701,7 @@ async function api(url,opt){const r=await fetch(url,opt);if(r.status===401){loca
 async function status(){
  const r=await api("/api/status"),j=r.job;
  $("conexao").classList.toggle("oculto",r.conectado);
+ $("aviso").textContent=r.aviso||"";$("aviso").classList.toggle("oculto",!r.aviso);
  $("planTxt").textContent=r.planilha.itens?r.planilha.itens+" produtos carregados ("+r.planilha.nome+")":"";
  $("nfTxt").textContent=r.nf.nfs+" NFs de saída em memória";
  $("fullTxt").textContent=r.full.pedidos+" pedidos do Full em memória";
