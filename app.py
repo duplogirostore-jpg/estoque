@@ -166,7 +166,7 @@ LOGIN_HTML = """<!doctype html><html lang="pt-br"><meta charset="utf-8"><meta na
 <h2 style="margin:0 0 14px">Risco de falta</h2>
 <input type="password" name="senha" placeholder="Senha" autofocus style="width:100%;padding:9px;box-sizing:border-box;border:1px solid #c9cfda;border-radius:6px">
 <button style="margin-top:12px;width:100%;padding:10px;border:0;border-radius:6px;background:#1f5eff;color:#fff;font-size:15px">Entrar</button>
-<div style="color:#b3261e;margin-top:10px;font-size:14px">%s</div></form></body></html>"""
+<div style="color:#b3261e;margin-top:10px;font-size:14px">{{ERRO}}</div></form></body></html>"""
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -177,7 +177,7 @@ def login():
             session["ok"] = True
             return redirect("/")
         erro = "Senha incorreta."
-    return Response(LOGIN_HTML % erro, mimetype="text/html")
+    return Response(LOGIN_HTML.replace("{{ERRO}}", erro), mimetype="text/html")
 
 
 @app.route("/logout")
