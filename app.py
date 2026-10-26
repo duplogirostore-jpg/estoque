@@ -23,6 +23,7 @@ import os
 import re
 import secrets
 import hmac
+import hashlib
 import threading
 import time
 import datetime as dt
@@ -32,12 +33,14 @@ from functools import wraps
 import requests
 from flask import Flask, request, jsonify, session, redirect, send_file, Response
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(24)
-
 CID = os.environ.get("BLING_CLIENT_ID", "")
 CSEC = os.environ.get("BLING_CLIENT_SECRET", "")
 SENHA = os.environ.get("APP_SENHA", "")
+
+app = Flask(__name__)
+# chave estavel: sem SECRET_KEY, deriva da senha + segredo do Bling (nao muda a cada reinicio)
+app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(("rf|%s|%s" % (SENHA, CSEC)).encode()).hexdigest()
+app.config.update(SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=dt.timedelta(days=30))
 DB_URL = os.environ.get("DATABASE_URL", "")
 API = "https://api.bling.com.br/Api/v3"
 OAUTH = "https://www.bling.com.br/Api/v3/oauth"
@@ -175,6 +178,7 @@ def login():
     if request.method == "POST":
         if SENHA and hmac.compare_digest(request.form.get("senha", ""), SENHA):
             session["ok"] = True
+            session.permanent = True
             return redirect("/")
         erro = "Senha incorreta."
     return Response(LOGIN_HTML.replace("{{ERRO}}", erro), mimetype="text/html")
@@ -186,19 +190,25 @@ def logout():
     return redirect("/login")
 
 
+def _assinador():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(app.secret_key, salt="bling-oauth")
+
+
 @app.route("/bling/conectar")
 @exige_login
 def bling_conectar():
-    st = secrets.token_urlsafe(16)
-    session["oauth_state"] = st
+    st = _assinador().dumps(secrets.token_urlsafe(8))
     return redirect("%s/authorize?response_type=code&client_id=%s&state=%s" % (OAUTH, CID, st))
 
 
 @app.route("/bling/callback")
-@exige_login
 def bling_callback():
-    if request.args.get("state") != session.get("oauth_state"):
-        return Response("State inválido. Volte e clique em Conectar ao Bling de novo.", 400)
+    # nao depende da sessao: o state assinado (valido por 15 min) prova que o pedido saiu daqui
+    try:
+        _assinador().loads(request.args.get("state", ""), max_age=900)
+    except Exception:
+        return Response("State inválido ou expirado. Volte ao painel e clique em Conectar ao Bling de novo.", 400)
     try:
         _pedir_token({"grant_type": "authorization_code", "code": request.args.get("code", "")})
     except Exception as e:
