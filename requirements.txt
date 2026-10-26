@@ -1,0 +1,6 @@
+flask
+gunicorn
+requests
+openpyxl
+xlrd>=2.0.1
+psycopg2-binary
